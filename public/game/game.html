@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<style>
+  html, body {
+  margin: 0;
+  padding: 0;
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+</style>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>영단어 계단 점프 게임</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+   body {
+  font-family: sans-serif;
+  margin: 0;
+  padding: 0;
+  height: auto;        
+  min-height: 100vh;    
+  overflow-y: auto;
+}
+
+#game-container {
+  background-image: url('./bg.png'), url('./bg-repeat.png');
+  background-repeat: no-repeat, repeat-y;
+  background-position: center bottom, center bottom; /* 둘 다 bottom으로 */
+  background-size: 100% auto, 100% auto;
+  background-attachment: scroll, scroll;
+}
+
+#character {
+  position: absolute;
+  width: clamp(60px, calc(8vw + 10px), 120px); /* 최소 60px, 최대 120px로 제한 */
+  height: auto;
+  aspect-ratio: 2 / 3;
+  font-size: 3vw;
+  z-index: 5;
+  transition: left 0.5s ease-out, top 0.5s ease-out;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+ 
+.word-container {
+  width: auto;
+  min-width: 200px;
+  max-width: 70vw;
+  max-height: 40vh; /* 화면 높이의 최대 40%만 차지하도록 제한 */
+  overflow-y: auto; /* 내용이 넘칠 경우 세로 스크롤바 생성 */
+  padding: 10px;
+  box-sizing: border-box;
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: flex; /* 내부 요소 정렬을 위해 flexbox 사용 */
+  flex-direction: column; /* 세로 방향으로 정렬 */
+  justify-content: center; /* 세로 가운데 정렬 */
+  align-items: center; /* 가로 가운데 정렬 */
+  text-align: center; /* 텍스트 가운데 정렬 */
+}
+
+/* @media 쿼리는 그대로 유지 */
+@media (max-width: 768px) {
+  .word-container {
+    max-width: 90vw;
+    max-height: 50vh; /* 모바일에서는 더 많은 높이 허용 */
+    bottom: 10px;
+  }
+}
+
+  .english-word {
+  font-size: 2.5em; /* 문제 단어 크기 */
+  margin-bottom: 15px; /* 선지와의 간격 */
+  font-weight: bold;
+  word-break: keep-all; /* 단어가 잘리지 않고 통째로 다음 줄로 넘어가도록 */
+  hyphens: auto; /* 자동 하이픈 */
+}
+
+.options-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 기본 2열 */
+  gap: 10px; /* 버튼 사이 간격 */
+  width: 100%; /* 부모 컨테이너 너비에 맞춤 */
+  flex-grow: 1; /* 남은 공간을 채우도록 성장 */
+  justify-items: center; /* 그리드 아이템 중앙 정렬 */
+}
+
+@media (max-width: 768px) {
+  .options-container {
+    grid-template-columns: 1fr; /* 모바일에서는 1열 */
+  }
+}
+
+    /* StyledButton과 유사한 버튼 스타일 */
+    .styled-button {
+      position: relative;
+      overflow: hidden;
+      background-color: white;
+      color: #7e22ce;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 0.5rem;
+      border: 2px solid #d8b4fe;
+      transition: all 0.3s;
+      cursor: pointer;
+      min-width: 160px;
+      max-width: 250px;
+      word-break: keep-all;
+      white-space: normal;
+      word-break: keep-all; /* 단어가 잘리지 않고 통째로 다음 줄로 넘어가도록 */
+      white-space: normal; /* 텍스트가 다음 줄로 자동으로 넘어가도록 허용 */
+      text-align: center; /* 텍스트 가운데 정렬 */
+      padding: 10px 15px; /* 패딩 조정하여 내용이 충분히 들어갈 공간 확보 */
+      min-height: 50px; /* 최소 높이 설정으로 작은 텍스트도 일정 크기 유지 */
+      display: flex; /* 텍스트가 세로 중앙에 오도록 flexbox 사용 */
+      align-items: center; /* 세로 중앙 정렬 */
+      justify-content: center; /* 가로 중앙 정렬 */
+    }
+    .styled-button::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 0;
+      height: 100%;
+      background-color: #f3e8ff;
+      z-index: 0;
+      transition: all 0.3s;
+    }
+    .styled-button:hover::before {
+      width: 100%;
+    }
+    .styled-button span {
+      position: relative;
+      z-index: 10;
+      pointer-events: none; /* 클릭 이벤트를 부모 요소로 전달 */
+    }
+    .styled-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .english-word {
+    font-size: 18px;
+    font-weight: bold;
+    background: rgba(255,255,255,0.9);
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 5px;
+    line-height: 1.5;
+  }
+
+  .eng-line {
+    font-size: 18px;
+    font-weight: bold;
+    color: #000;
+    margin-bottom: 4px;
+  }
+
+  .kor-line {
+    font-size: 16px;
+    color: #555;
+  }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="character">
+      <img src="./kirby-angel-512x512.svg" style="width: 100%; height: 100%;" />
+    </div>
+  </div>
+  <script>
+
+function generateZigzagStairPositions(count) {
+  const positions = [];
+  let direction = 1; // 1: 왼쪽에서 오른쪽, -1: 오른쪽에서 왼쪽
+
+  // --- 새로운 반응형 stepY 계산 시작 ---
+  const TARGET_MIN_STEP_Y_NARROW = 100; // 매우 좁은 화면을 위한 최소 Y 간격 (px)
+  const NARROW_WIDTH_THRESHOLD = 450;   // TARGET_MIN_STEP_Y_NARROW를 사용할 너비 임계값 (px)
+  const NORMAL_WIDTH_THRESHOLD_FOR_MIN = 800; // 기존 최소 간격(150px)을 사용할 너비 임계값 (px)
+  const ORIGINAL_MIN_STEP_Y = 150;      // 계단 사이 최소 Y 간격 (px)
+  const ORIGINAL_MAX_STEP_Y = 170;      // 계단 사이 최대 Y 간격 (px)
+  const HEIGHT_FACTOR = 0.18;           // window.innerHeight에 대한 기존 비율
+
+  let dynamicMinStepY;
+  if (window.innerWidth <= NARROW_WIDTH_THRESHOLD) {
+    dynamicMinStepY = TARGET_MIN_STEP_Y_NARROW;
+  } else if (window.innerWidth <= NORMAL_WIDTH_THRESHOLD_FOR_MIN) {
+    // 좁은 너비와 일반 너비 사이에서 최소 간격을 선형 보간합니다.
+    const progress = (window.innerWidth - NARROW_WIDTH_THRESHOLD) /
+                     (NORMAL_WIDTH_THRESHOLD_FOR_MIN - NARROW_WIDTH_THRESHOLD);
+    dynamicMinStepY = TARGET_MIN_STEP_Y_NARROW + progress * (ORIGINAL_MIN_STEP_Y - TARGET_MIN_STEP_Y_NARROW);
+  } else {
+    dynamicMinStepY = ORIGINAL_MIN_STEP_Y;
+  }
+  dynamicMinStepY = Math.floor(dynamicMinStepY); // 픽셀 값을 정수로 만듭니다.
+
+  // 화면 크기에 비례하여 계단 간격 조정 (기존 로직  기반으로 수정)
+  const stepY = Math.max(dynamicMinStepY, Math.min(ORIGINAL_MAX_STEP_Y, window.innerHeight * HEIGHT_FACTOR));
+  // --- 새로운 반응형 stepY 계산 끝 ---
+
+ const bottomY = gameContainer.offsetHeight + 4500; // 
+
+  // 기존 5개 배치 로직 
+  const minXPercent = 15; // 
+  const maxXPercent = 85; // 
+  const rangeXPercent = maxXPercent - minXPercent;
+  const numStepsInLine = 5; // 
+  const stepIncrement = rangeXPercent / (numStepsInLine - 1); // 
+
+  for (let i = 0; i < count; i++) {
+    const xPercent = direction === 1 ?
+      minXPercent + (i % numStepsInLine) * stepIncrement : // 
+      maxXPercent - (i % numStepsInLine) * stepIncrement; // 
+    const y = bottomY - i * stepY; // 
+
+    if (i % numStepsInLine === numStepsInLine - 1) direction *= -1; // 
+    positions.push({ xPercent, y });
+  }
+
+  return positions; // 
+}
+    const character = document.getElementById("character");
+    const gameContainer = document.getElementById("game-container");
+
+    let filteredWordData = [];
+    let selectedSet = "";
+    let currentIndex = 0;
+    let score = 0;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const gameData = JSON.parse(localStorage.getItem('gameData') || '{}');
+
+      if (gameData.currentSet && Array.isArray(gameData.wordData) && gameData.wordData.length > 0) {
+        selectedSet = gameData.currentSet;
+
+        filteredWordData = gameData.wordData
+          .filter(item => item && item.question && item.answer)
+          .map(item => ({
+            영단어: item.question.toString().trim(),
+            한글: item.answer.toString().trim()
+          }));
+
+        STAIR_POSITIONS = generateZigzagStairPositions(filteredWordData.length);  
+
+        if (filteredWordData.length > 0) {
+      startGame();
+
+          // ✅ 커비가 맨 아래에 있을 때 아래로 스크롤되게 함
+      setTimeout(() => {
+        moveCharacterToIndex(0); // 위치 설정
+      }, 300); // 약간의 delay 후 실행
+    } else {
+      alert('유효한 단어 데이터가 없습니다.');
+      goBackToStudyApp();
+    }
+  } else {
+    alert('게임 데이터를 불러올 수 없습니다. 학습앱으로 돌아갑니다.');
+    goBackToStudyApp();
+  }
+});
+
+  function goBackToStudyApp() {
+  localStorage.removeItem('gameData');
+  window.location.href = 'index.html'; // 학습앱(index.html)으로 돌아가기
+}
+
+function startGame() {
+  currentIndex = 0;
+  score = 0;
+
+  adjustGameContainerHeight();
+  clearGameArea();
+  createAllStairsAndWords();
+
+  // ✅ 캐릭터 이미지 방향 초기화
+  const img = character.querySelector("img");
+  img.style.transform = "scaleX(1)";
+
+  moveCharacterToIndex(0);  // 위치 이동
+  showWordOptions(0);       // 첫 문제 표시
+  
+ setTimeout(() => {
+  // 페이지 맨 아래로 스크롤 (잔디밭이 보이도록)
+  const maxScroll = Math.max(0, document.body.scrollHeight - window.innerHeight);
+  window.scrollTo({
+    top: maxScroll,
+    behavior: "smooth"
+  });
+}, 300);
+}
+
+function adjustGameContainerHeight() {
+  // bg.png 이미지의 실제 높이를 고려한 최소 높이 설정
+  const minHeight = window.innerHeight * 3; // 최소 화면 3배 높이
+  const calculatedHeight = filteredWordData.length * 350 + 1000;
+  const finalHeight = Math.max(minHeight, calculatedHeight);
+  
+  gameContainer.style.height = finalHeight + "px";
+}
+
+
+let STAIR_POSITIONS = [];
+
+function getStairPosition(index) {
+  if (!STAIR_POSITIONS.length) {
+    STAIR_POSITIONS = generateZigzagStairPositions(filteredWordData.length);
+  }
+
+  const pos = STAIR_POSITIONS[index];
+  const x = (window.innerWidth * pos.xPercent) / 100;
+  const y = pos.y;
+  return { x, y };
+}
+
+
+    function createAllStairsAndWords() {
+  filteredWordData.forEach((word, index) => {
+    const pos = getStairPosition(index);
+// 사용할 계단 이미지들의 경로 배열
+const STAIR_IMAGES = [
+  "./stair1.png",
+  "./stair2.png", 
+  "./stair3.png",
+  "./stair4.png",
+  "./stair5.png"
+];
+const stair = document.createElement("img");
+stair.src = STAIR_IMAGES[index % STAIR_IMAGES.length];
+// 이미지 로딩 에러 처리 추가
+stair.onerror = () => {
+  console.warn(`계단 이미지 로딩 실패: ${stair.src}`);
+  // 기본 높이로 설정
+  stairHeight = stairWidth * 0.4;
+  stair.style.height = stairHeight + "px";
+  container.style.top = (pos.y + stairHeight + 20) + "px";
+};
+stair.style.position = "absolute";
+stair.style.zIndex = "3";
+stair.id = "stair-" + index;
+stair.className = "stair";
+
+// 계단 크기도 화면에 맞춰 축소
+let stairWidth = Math.max(
+  Math.min(window.innerWidth * 0.12, 200), // 최대 200px로 제한
+  100 // 최소 100px
+);
+let stairHeight = stairWidth * 0.4;
+
+stair.style.width = stairWidth + "px";
+stair.style.height = stairHeight + "px";
+let stairLeft = pos.x - stairWidth / 2;
+stair.style.top = pos.y + "px";
+   stair.onload = () => {
+      const naturalAspectRatio = stair.naturalHeight / stair.naturalWidth;
+      const newHeight = stairWidth * naturalAspectRatio;
+      stair.style.height = newHeight + "px";
+    };
+
+gameContainer.appendChild(stair);
+
+// 경계 검사 추가
+if (stairLeft < 0) {
+  stairLeft = 0;
+}
+if (stairLeft + stairWidth > window.innerWidth) {
+  stairLeft = window.innerWidth - stairWidth;
+}
+
+stair.style.left = stairLeft + "px";
+
+// 단어 컨테이너
+const container = document.createElement("div");
+container.className = "word-container";
+// container.style.position = "absolute"; // 이 줄은 CSS에서 fixed로 정의했으므로 제거
+// container.style.zIndex = "3"; // 이 줄은 CSS에서 더 높은 값으로 정의했으므로 제거
+container.id = "word-container-" + index;
+container.style.display = "none"; // showWordOptions 함수에서 제어하므로 유지
+
+const wordDiv = document.createElement("div");
+wordDiv.className = "english-word";
+const [english, korean] = word.영단어.split("\n");
+wordDiv.innerHTML = `
+  <div class="eng-line">${english}</div>
+  ${korean ? `<div class="kor-line">${korean}</div>` : ""}
+`;
+container.appendChild(wordDiv);
+
+const optionsDiv = document.createElement("div");
+optionsDiv.className = "options-container";
+container.appendChild(optionsDiv);
+
+gameContainer.appendChild(container);
+      });
+    }
+
+    function showWordOptions(index) {
+      filteredWordData.forEach((_, i) => {
+        const container = document.getElementById("word-container-" + i);
+        if (!container) return;
+
+        if (i === index) {
+          container.style.display = "block";
+          fillOptions(container.querySelector(".options-container"), filteredWordData[i].한글);
+        } else {
+          container.style.display = "none";
+        }
+      });
+    }
+
+     function fillOptions(container, correct) {
+      container.innerHTML = "";
+      const wrongs = getWrongAnswers(correct);
+      const allOptions = [correct, ...wrongs].sort(() => Math.random() - 0.5);
+
+      allOptions.forEach(option => {
+        const btn = document.createElement("button");
+        btn.className = "styled-button";
+        btn.innerHTML = `<span>${option}</span>`;
+        btn.onclick = () => {
+          // 보상 이미지 로직 (정답 여부와 관계없이 실행)
+          if (score % 5 === 0 && score / 5 <= 5 && currentIndex > 0) { // currentIndex > 0 추가하여 첫 시작 시에는 작동하지 않도록
+            const imageNumber = score / 5;
+            const rewardImage = document.getElementById("reward-image");
+            rewardImage.src = `./image${imageNumber}.gif`;
+
+            const stairIndex = currentIndex - 1; // 현재 점프하려는 계단이 아니라, 이미 점프하여 도착한 계단에 이미지를 띄우므로 currentIndex - 1
+            if (stairIndex >= 0) { // 인덱스 유효성 검사
+                const stairPos = getStairPosition(stairIndex);
+
+                rewardImage.style.left = (stairPos.x - 160) + "px";
+                rewardImage.style.top = (stairPos.y - 20) + "px";
+                rewardImage.style.display = "block";
+
+                // 3초 후 자동 숨기기
+                setTimeout(() => {
+                    rewardImage.style.display = "none";
+                }, 3000);
+            }
+          }
+
+          if (option.trim() === correct.trim()) {
+            score++;
+            currentIndex++;
+            if (currentIndex >= filteredWordData.length) {
+              const congratsGif = document.getElementById("congrats-gif");
+              congratsGif.style.display = "block";
+              setTimeout(() => {
+                congratsGif.style.display = "none";
+                currentIndex = 0; // 게임 종료 후 초기화
+                score = 0;
+                // 게임 재시작 또는 다른 화면으로 이동 로직 추가 가능
+                startGame(); // 게임 재시작 (예시)
+              }, 4000);
+              return; // 게임이 끝났으므로 여기서 함수 종료
+            }
+            moveCharacterToIndex(currentIndex);
+            showWordOptions(currentIndex);
+          } else {
+            const maAgainGif = document.getElementById("ma-again-gif");
+            maAgainGif.style.display = "block";
+            setTimeout(() => {
+              maAgainGif.style.display = "none";
+              currentIndex = 0; // 틀렸을 때 초기화
+              score = 0;
+              moveCharacterToIndex(0); // 맨 아래로 이동
+              showWordOptions(0); // 첫 문제부터 다시 시작
+            }, 3000);
+          }
+        };
+
+        container.appendChild(btn);
+      });
+    }
+
+
+function moveCharacterToIndex(index) {
+  const pos = getStairPosition(index);
+
+  const maxWidth = 300; // 최대 가로 크기 제한
+  const stairWidth = Math.min(Math.max(window.innerWidth * 0.15, 120), maxWidth);
+  const stairHeight = stairWidth * 0.4;
+
+  const characterWidth = character.offsetWidth;
+  let characterX = pos.x - characterWidth / 2 - 15; // ← -10 추가 (왼쪽으로 10px 이동)
+  characterX = Math.max(0, Math.min(characterX, window.innerWidth - characterWidth));
+
+  const characterY = pos.y - stairHeight + 20; //캐릭터와 계단 사이 높이거리. 클수록 멀어짐
+
+  character.style.left = characterX + "px";
+  character.style.top = characterY + "px";
+
+  // 방향 반전 로직
+  if (index > 0) {
+    const prevPos = getStairPosition(index - 1);
+    const movingRight = pos.x > prevPos.x;
+    const img = character.querySelector("img");
+    img.style.transform = movingRight ? "scaleX(1)" : "scaleX(-1)";
+  }
+
+  adjustGameContainerHeight();
+
+  // 새로운 스크롤 코드 (교체할 코드)
+const viewportHeight = window.innerHeight;
+const characterCenterY = characterY + (character.offsetHeight / 2);
+
+// 캐릭터가 화면 상단 1/3 지점에 오도록 스크롤
+const targetScrollY = Math.max(0, characterCenterY - viewportHeight / 3);
+
+window.scrollTo({
+  top: targetScrollY,
+  behavior: "smooth"
+});
+} 
+
+    function getWrongAnswers(correct) {
+      const wrongs = [];
+      const allAnswers = filteredWordData.map(w => w.한글).filter(a => a !== correct);
+      while (wrongs.length < 3 && allAnswers.length > 0) {
+        const idx = Math.floor(Math.random() * allAnswers.length);
+        const candidate = allAnswers.splice(idx, 1)[0];
+        if (!wrongs.includes(candidate)) wrongs.push(candidate);
+      }
+      return wrongs;
+    }
+
+    function clearGameArea() {
+      document.querySelectorAll(".stair, .word-container").forEach(el => el.remove());
+    }
+
+   // 창 크기 변경 시 계단과 단어를 다시 생성하고 캐릭터 위치 재조정
+window.addEventListener("resize", () => {
+  clearGameArea();                     // 계단과 단어 모두 제거
+  createAllStairsAndWords();          // 계단과 단어 다시 생성
+  moveCharacterToIndex(currentIndex); // 캐릭터 위치 재설정
+  showWordOptions(currentIndex);      // 현재 문제 다시 표시 
+});
+ 
+  </script>
+
+<!-- 학습앱으로 돌아가기 버튼 -->
+  <button id="back-button" onclick="goBackToStudyApp()" style="position: fixed; top: 20px; right: 20px; z-index: 1000; background-color: #7e22ce; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+    학습앱으로 돌아가기
+  </button>
+
+  <!-- 효과 이미지 -->
+  <img id="congrats-gif" src="./goodjob.gif" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; z-index: 999; width: 500px;" />
+  <img id="ma-again-gif" src="./ma_again.gif" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; z-index: 999; width: 300px;" />
+  <img id="reward-image"
+     src=""
+     style="position: absolute; display: none; width: 150px; height: auto; z-index: 5;" />
+
+</body>
+</html>

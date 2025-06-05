@@ -1,94 +1,38 @@
 import React, { useState, useRef, useEffect } from 'react';
-
 import { Upload, BookOpen, FileText, BarChart3, RotateCcw, Volume2, Check, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
+import { initializeApp } from 'firebase/app';
+import firebaseConfig from './firebaseConfig'; 
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-const JoyStudyApp = () => {
-  const [studyData, setStudyData] = useState([]);
-const initialUsers = {
-  hoo: '10OqBEmzpjamtSBEiBxfua04Z103l0AFrm4zBE1BJ-tA',
-  un: '1PCexbIAT1kBQiGlNIN0zzGDwUTVkZrO-7LutKuNhET4',
-  min: '10iqO1_5xo2WeQlTMxt0Qt1r8IbpRAJblitJ_a6XNzI0'
+// Firebase 초기화
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+const saveSpreadsheetDataToFirestore = async (data, user, sheetName) => {
+  try {
+    const groupedBySet = data.reduce((acc, item) => {
+      if (!acc[item.set]) acc[item.set] = [];
+      acc[item.set].push({ question: item.question, answer: item.answer });
+      return acc;
+    }, {});
+
+    for (const setName in groupedBySet) {
+      const setRef = doc(db, 'users', user, 'sheets', sheetName, 'sets', setName);
+      await setDoc(setRef, { 
+        items: groupedBySet[setName],
+        lastUpdated: new Date(),
+        source: 'spreadsheet'
+      });
+    }
+    
+    console.log(`${user}의 ${sheetName} 시트 데이터가 Firestore에 저장되었습니다.`);
+  } catch (error) {
+    console.error('Firestore 저장 오류:', error);
+  }
 };
-
-const [users, setUsers] = useState(initialUsers);
-const [userList, setUserList] = useState(Object.keys(initialUsers));
-const [selectedUser, setSelectedUser] = useState('user1'); // 사용자 선택 상태
-const [selectedSheet, setSelectedSheet] = useState('영단어'); // 기본 탭 이름
-  const [selectedSet, setSelectedSet] = useState('');
-  const [activeTab, setActiveTab] = useState('upload');
-  const [testStats, setTestStats] = useState({});
-  const [wrongAnswers, setWrongAnswers] = useState({});
-  const [currentTest, setCurrentTest] = useState(null);
-  const [testResults, setTestResults] = useState([]);
-  const [showResults, setShowResults] = useState(false);
-  const [statImages, setStatImages] = useState({});
-const addUser = (newUser, sheetID) => {
-  setUsers(prev => ({ ...prev, [newUser]: sheetID }));
-  setUserList(prev => prev.includes(newUser) ? prev : [...prev, newUser]);
-};
-  const fileInputRef = useRef(null);
-  const imageInputRef = useRef(null);
-// 사용자별 기록 불러오기
-useEffect(() => {
-  const savedWrong = JSON.parse(localStorage.getItem(`${selectedUser}_wrongAnswers`) || '{}');
-  const savedStats = JSON.parse(localStorage.getItem(`${selectedUser}_testStats`) || '{}');
-  setWrongAnswers(savedWrong);
-  setTestStats(savedStats);
-}, [selectedUser]);
-
-// 사용자별 오답 저장
-useEffect(() => {
-  localStorage.setItem(`${selectedUser}_wrongAnswers`, JSON.stringify(wrongAnswers));
-}, [wrongAnswers, selectedUser]);
-
-// 사용자별 통계 저장
-useEffect(() => {
-  localStorage.setItem(`${selectedUser}_testStats`, JSON.stringify(testStats));
-}, [testStats, selectedUser]);
-
-// 마지막 사용자 기억
-useEffect(() => {
-  const savedUser = localStorage.getItem('lastUser');
-  if (savedUser) setSelectedUser(savedUser);
-}, []);
-
-useEffect(() => {
-  localStorage.setItem('lastUser', selectedUser);
-}, [selectedUser]);
-
-useEffect(() => {
-  const sheetID = users[selectedUser];
-  if (!sheetID || !selectedSheet) return;
-
-  const url = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:json&sheet=${selectedSheet}`;
-
-  fetch(url)
-    .then(res => res.text())
-    .then(data => {
-      const json = JSON.parse(data.substr(47).slice(0, -2));
-      const rows = json.table.rows;
-
-      const processedData = rows
-        .map(row => row.c)
-        .filter(cells => cells && cells.length >= 3 && cells[0] && cells[1] && cells[2])
-        .map(cells => ({
-          set: cells[0].v,
-          question: cells[1].v,
-          answer: cells[2].v
-        }));
-
-      setStudyData(processedData);
-      if (processedData.length > 0) {
-        setSelectedSet(processedData[0].set);
-      }
-
-      console.log(`${selectedUser}의 시트 '${selectedSheet}'에서 ${processedData.length}개 불러옴`);
-    })
-    .catch(err => {
-      console.error('스프레드시트 로딩 오류:', err);
-    });
-}, [selectedUser, selectedSheet]);
 
   // 버튼 스타일 컴포넌트
   const StyledButton = ({ children, onClick, className = '', disabled = false }) => (
@@ -109,18 +53,269 @@ useEffect(() => {
     </button>
   );
 
+const JoyStudyApp = () => {
+  const [studyData, setStudyData] = useState([]);
+  const [sheetList, setSheetList] = useState([]); // 자동으로 불러온 시트 이름 목록
+const initialUsers = {
+  hoo: '10OqBEmzpjamtSBEiBxfua04Z103l0AFrm4zBE1BJ-tA',
+  un: '1PCexbIAT1kBQiGlNIN0zzGDwUTVkZrO-7LutKuNhET4',
+  지민: '1bS1VXxtA7rv-zQAixdiDK47iSHQei1zIe42-kG1PdUw'
+};
+
+const MAX_INIT_ATTEMPTS = 3;
+const [users, setUsers] = useState(initialUsers);
+const [userList, setUserList] = useState(Object.keys(initialUsers));
+const [selectedUser, setSelectedUser] = useState(Object.keys(initialUsers)[0] || ''); // 첫 번째 사용자를 기본값으로
+const [selectedSheet, setSelectedSheet] = useState('영단어'); // 기본 탭 이름
+  const [selectedSet, setSelectedSet] = useState('');
+  const [activeTab, setActiveTab] = useState('upload');
+  const [testStats, setTestStats] = useState({});
+  const [wrongAnswers, setWrongAnswers] = useState({});
+  const [justClearedWrongAnswers, setJustClearedWrongAnswers] = useState(false);
+  const [currentTest, setCurrentTest] = useState(null);
+  const [wasWrongAnswerTest, setWasWrongAnswerTest] = useState(false);
+  const [testResults, setTestResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
+  const [statImages, setStatImages] = useState({});
+   const [isLoading, setIsLoading] = useState(false);
+ const [speechRate, setSpeechRate] = useState(0.9); // 기본 속도 0.9  
+
+ const [isSubjectiveTest, setIsSubjectiveTest] = useState(false);
+const [subjectiveAnswer, setSubjectiveAnswer] = useState('');
+const [isOnline, setIsOnline] = useState(navigator.onLine);
+const [dataSource, setDataSource] = useState('auto'); // 'auto' | 'sheet' | 'excel'
+
+
+const addUser = (newUser, sheetID) => {
+  setUsers(prev => ({ ...prev, [newUser]: sheetID }));
+  setUserList(prev => prev.includes(newUser) ? prev : [...prev, newUser]);
+};
+
+const fileInputRef = useRef(null);
+
+  const imageInputRef = useRef(null);
+
+ const loadStatImages = async () => {
+  try {
+    const imageKeys = [];
+    // 모든 사용자와 테스트 횟수 조합 생성
+    for (const user of userList) {
+      for (let i = 1; i <= 5; i++) {
+        imageKeys.push(`${user}_test${i}`);
+      }
+    }
+    
+    const loadedImages = {};
+    for (const key of imageKeys) {
+      try {
+        const imageDoc = doc(db, 'stat-images', key);
+        const docSnap = await getDoc(imageDoc);
+        if (docSnap.exists()) {
+          loadedImages[key] = docSnap.data().url;
+        }
+      } catch (error) {
+        console.log(`이미지 ${key} 로딩 실패 (없거나 오류):`, error);
+      }
+    }
+    
+    setStatImages(loadedImages);
+  } catch (error) {
+    console.error('통계 이미지 로딩 오류:', error);
+  }
+}; 
+
+// 초기 사용자 자동 설정
+useEffect(() => {
+  if (!selectedUser && userList.length > 0) {
+    const savedUser = localStorage.getItem('lastUser');
+    if (savedUser && userList.includes(savedUser)) {
+      setSelectedUser(savedUser);
+    } else {
+      setSelectedUser(userList[0]); // 첫 번째 사용자를 기본값으로
+    }
+  }
+  
+  // 통계 이미지 로딩 추가 👈 이 부분을 추가
+  if (userList.length > 0) {
+    loadStatImages();
+  }
+}, [userList, selectedUser]);
+
+// 시트 목록 자동 로딩
+useEffect(() => {
+  const sheetID = users[selectedUser];
+  if (!sheetID) return;
+
+  const API_KEY = 'AIzaSyDcasa5mBSxpxz7evW8VwJLhnVoLhZ1gCo';  
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetID}?fields=sheets.properties.title&key=${API_KEY}`;
+
+  fetch(url)
+    .then(res => {
+      if (!res.ok) throw new Error('시트 목록 불러오기 실패');
+      return res.json();
+    })
+    .then(data => {
+      const sheetTitles = data.sheets.map(sheet => sheet.properties.title);
+      setSheetList(sheetTitles);
+      if (sheetTitles.length > 0) {
+        setSelectedSheet(sheetTitles[0]);
+      }
+    })
+    .catch(err => {
+      console.error('시트 목록 오류:', err);
+      setSheetList([]);
+    });
+}, [selectedUser]);
+
+// 사용자별 기록 불러오기
+useEffect(() => {
+  const savedWrong = JSON.parse(localStorage.getItem(`${selectedUser}_wrongAnswers`) || '{}');
+  const savedStats = JSON.parse(localStorage.getItem(`${selectedUser}_testStats`) || '{}');
+  setWrongAnswers(savedWrong);
+  setTestStats(savedStats);
+}, [selectedUser]);
+
+
+// 사용자별 오답 저장
+useEffect(() => {
+  localStorage.setItem(`${selectedUser}_wrongAnswers`, JSON.stringify(wrongAnswers));
+}, [wrongAnswers, selectedUser]);
+
+// 사용자별 통계 저장
+useEffect(() => {
+  localStorage.setItem(`${selectedUser}_testStats`, JSON.stringify(testStats));
+}, [testStats, selectedUser]);
+
+
+useEffect(() => {
+  localStorage.setItem('lastUser', selectedUser);
+}, [selectedUser]);
+
+useEffect(() => {
+  const handleMessage = (event) => {
+    if (event.data.type === 'BACK_TO_STUDY') {
+      setActiveTab('test'); // 또는 원하는 탭으로 이동
+    }
+  };
+  
+  window.addEventListener('message', handleMessage);
+  return () => window.removeEventListener('message', handleMessage);
+}, []);
+
+useEffect(() => {
+  const sheetID = users[selectedUser];
+  if (!sheetID || !selectedSheet || !selectedUser) {
+    console.log('로딩 조건 미충족:', { sheetID, selectedSheet, selectedUser });
+    return;
+  }
+
+  setIsLoading(true);
+  console.log(`${selectedUser}의 시트 '${selectedSheet}' 로딩 시작...`);
+
+  const encodedSheetName = encodeURIComponent(selectedSheet);
+  const url = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:json&sheet=${encodedSheetName}&headers=1`;
+
+  fetch(url)
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      return res.text();
+    })
+    .then(data => {
+      try {
+        const json = JSON.parse(data.substr(47).slice(0, -2));
+        const rows = json.table.rows;
+
+        const processedData = rows
+          .map(row => row.c)
+          .filter(cells => {
+            const getVal = (cell, colIndex) => {
+              if (!cell) return '';
+              let value = cell.formattedValue ?? cell.f ?? cell.v ?? '';
+              value = value.toString().trim();
+              value = value.replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+              value = value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+              return value;
+            };
+
+            const val1 = getVal(cells?.[0], 0);
+            const val2 = getVal(cells?.[1], 1);
+            const val3 = getVal(cells?.[2], 2);
+
+            return cells && cells.length >= 3 && val1 && val2 && val3;
+          })
+          .map(cells => {
+            const getValue = (cell) => {
+              if (!cell || cell.v == null) return '';
+              let value = cell.v.toString().trim();
+              if (cell.f && cell.f !== cell.v) value = cell.f.toString().trim();
+              value = value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+              return value;
+            };
+
+            return {
+              set: getValue(cells[0]),
+              question: getValue(cells[1]),
+              answer: getValue(cells[2])
+            };
+          })
+          .filter(item => item.set && item.question && item.answer);
+
+        setStudyData(processedData);
+
+       // Firestore에도 저장
+if (processedData.length > 0) {
+  saveSpreadsheetDataToFirestore(processedData, selectedUser, selectedSheet);
+}
+
+if (processedData.length > 0) {
+  setSelectedSet(processedData[0].set);
+} else {
+  setSelectedSet('');
+}
+
+        if (processedData.length > 0) {
+          setSelectedSet(processedData[0].set);
+        } else {
+          setSelectedSet('');
+        }
+      } catch (err) {
+        console.error('JSON 파싱 오류:', err);
+      }
+    })
+    .catch(err => {
+      console.error('스프레드시트 로딩 오류:', err);
+    })
+    .finally(() => {
+      setIsLoading(false);
+    });
+}, [selectedUser, selectedSheet, users]);
+
+useEffect(() => {
+  const handleOnline = () => setIsOnline(true);
+  const handleOffline = () => setIsOnline(false);
+
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('offline', handleOffline);
+
+  return () => {
+    window.removeEventListener('online', handleOnline);
+    window.removeEventListener('offline', handleOffline);
+  };
+}, []);
+
   // 파일 업로드 처리
-  const handleFileUpload = (event) => {
+const handleFileUpload = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
 
-  // 1. 파일명에서 사용자 자동 추출
-  const fileName = file.name.toLowerCase(); // 예: user1_vocab.xlsx
-  const userFromFile = fileName.split('_')[0]; // → user1
+  const fileName = file.name.toLowerCase();
+  const userFromFile = fileName.split('_')[0];
   setSelectedUser(userFromFile); // 자동 사용자 설정
 
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
@@ -128,7 +323,6 @@ useEffect(() => {
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      // 2. 학습 데이터 파싱
       const processedData = jsonData
         .filter(row => row.length >= 3 && row[0] && row[1] && row[2])
         .map(row => ({
@@ -137,49 +331,85 @@ useEffect(() => {
           answer: String(row[2]).trim()
         }));
 
-      // 3. 이전 데이터에 누적 추가
       setStudyData(prev => [...prev, ...processedData]);
 
-      // 4. 세트 자동 선택 (업로드된 데이터 중 첫 번째 세트)
+    // ✅ Firestore 저장
+const groupedBySet = processedData.reduce((acc, item) => {
+  if (!acc[item.set]) acc[item.set] = [];
+  acc[item.set].push({ question: item.question, answer: item.answer });
+  return acc;
+}, {});
+
+for (const setName in groupedBySet) {
+  const setRef = doc(db, 'users', userFromFile, 'sheets', 'uploaded', 'sets', setName);
+  await setDoc(setRef, { 
+    items: groupedBySet[setName],
+    lastUpdated: new Date(),
+    source: 'excel'
+  });
+}
+
       if (processedData.length > 0) {
         setSelectedSet(processedData[0].set);
       }
 
-      alert(`${userFromFile}의 데이터 ${processedData.length}개가 업로드되었습니다.`);
+      alert(`${userFromFile}의 데이터 ${processedData.length}개가 업로드되고 Firestore에 저장되었습니다.`);
     } catch (error) {
       alert('파일 읽기 중 오류가 발생했습니다.');
+      console.error(error);
     }
   };
 
   reader.readAsArrayBuffer(file);
 };
-  };
+
+  
 
   // 이미지 업로드 처리
-  const handleImageUpload = (event) => {
-    const files = Array.from(event.target.files);
-    files.forEach(file => {
-      const fileName = file.name.toLowerCase();
-      if (fileName.includes('test') && (fileName.includes('1') || fileName.includes('2') || fileName.includes('3') || fileName.includes('4') || fileName.includes('5'))) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          setStatImages(prev => {
-  const match = fileName.match(/(user\d+)_test([1-5])/);
-  if (match) {
-    const user = match[1]; // user1
-    const count = match[2]; // '3'
-    return {
-      ...prev,
-      [`${user}_test${count}`]: e.target.result
-    };
-  }
-  return prev;
-});
-        };
-        reader.readAsDataURL(file);
+const handleImageUpload = async (event) => {
+  const files = Array.from(event.target.files);
+  
+  for (const file of files) {
+    const fileName = file.name.toLowerCase();
+    if (fileName.includes('test') && (fileName.includes('1') || fileName.includes('2') || fileName.includes('3') || fileName.includes('4') || fileName.includes('5'))) {
+      
+      const match = fileName.match(/([a-zA-Z0-9]+)_test([1-5])/);
+      if (match) {
+        const user = match[1];
+        const count = match[2];
+        const imageKey = `${user}_test${count}`;
+        
+        try {
+          // Firebase Storage에 이미지 업로드
+          const storageRef = ref(storage, `stat-images/${imageKey}.png`);
+          await uploadBytes(storageRef, file);
+          const downloadURL = await getDownloadURL(storageRef);
+          
+          // Firestore에 이미지 URL 저장
+          const imageDoc = doc(db, 'stat-images', imageKey);
+          await setDoc(imageDoc, { 
+            url: downloadURL,
+            uploadedAt: new Date(),
+            user: user,
+            testCount: count
+          });
+          
+          // 로컬 state 업데이트
+          setStatImages(prev => ({
+            ...prev,
+            [imageKey]: downloadURL
+          }));
+          
+          console.log(`이미지 ${imageKey} 업로드 완료`);
+        } catch (error) {
+          console.error(`이미지 ${imageKey} 업로드 실패:`, error);
+        }
       }
-    });
-  };
+    }
+  }
+  
+  alert('이미지 업로드가 완료되었습니다.');
+};
 
   // 세트별 데이터 가져오기
   const getSetData = (setName) => {
@@ -192,41 +422,59 @@ useEffect(() => {
   return [...new Set(sets)].sort();
 };
 
-  // 음성 재생 (영어 감지)
-  const speakText = (text) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      const isEnglish = /^[a-zA-Z\s.,!?'"]+$/.test(text);
-      if (isEnglish) {
-        utterance.lang = 'en-US';
-      } else {
-        utterance.lang = 'ko-KR';
+ // 음성 재생 (영어 부분만 재생, 학습용은 괄호에 답 삽입)
+const speakText = (text, answer = null) => {
+  if ('speechSynthesis' in window) {
+    let textToSpeak = text;
+    
+    // 학습용으로 답이 제공된 경우 모든 괄호 안에 답을 삽입
+    if (answer) {
+      textToSpeak = text.replace(/\([^)]*\)/g, `${answer}`);
+    }
+    
+    // 영어 부분만 추출하는 정규식
+    const englishRegex = /[a-zA-Z][a-zA-Z\s.,!?'"-()]*[a-zA-Z]/g;
+    const englishMatches = textToSpeak.match(englishRegex) || [];
+    
+    // 영어 부분이 있으면 영어로만 재생
+    if (englishMatches.length > 0) {
+      const englishText = englishMatches.join(' ').trim();
+      if (englishText) {
+        const englishUtterance = new SpeechSynthesisUtterance(englishText);
+        englishUtterance.lang = 'en-US';
+        englishUtterance.rate = speechRate; // 상태값 사용
+        speechSynthesis.speak(englishUtterance);
       }
-      speechSynthesis.speak(utterance);
     }
-  };
-
+  }
+};
   // 테스트 시작
-  const startTest = (isWrongAnswerTest = false) => {
-    let questions;
-    
-    if (isWrongAnswerTest) {
-      const wrongData = wrongAnswers[selectedSet] || [];
-      questions = wrongData.map(item => ({
-        ...item,
-        choices: generateChoices(item, getSetData(selectedSet))
-      }));
-    } else {
-      const setData = getSetData(selectedSet);
-      questions = setData.map(item => ({
-        ...item,
-        choices: generateChoices(item, setData)
-      }));
-    }
-    
-    setCurrentTest({ questions, isWrongAnswerTest, currentIndex: 0, userAnswers: [] });
-    setShowResults(false);
-  };
+ const startTest = (isWrongAnswerTest = false, isSubjective = false) => {
+  let questions;
+
+  if (isWrongAnswerTest) {
+    const wrongData = wrongAnswers[selectedSet] || [];
+    questions = wrongData.map(item => ({
+  ...item,
+  choices: generateChoices(item, getSetData(selectedSet))
+}));
+
+  } else {
+    const setData = getSetData(selectedSet);
+    questions = setData.map(item => ({
+  ...item,
+  choices: generateChoices(item, setData)
+}));
+
+  }
+
+  setCurrentTest({ questions, isWrongAnswerTest, currentIndex: 0, userAnswers: [] });
+  setIsSubjectiveTest(isSubjective);   // 추가
+  setSubjectiveAnswer('');             // 추가
+  setShowResults(false);
+};
+
+
 
   // 선택지 생성
   const generateChoices = (correctItem, allData) => {
@@ -250,7 +498,7 @@ useEffect(() => {
   // 답안 제출
   const submitAnswer = (selectedAnswer) => {
     const currentQuestion = currentTest.questions[currentTest.currentIndex];
-    const isCorrect = selectedAnswer === currentQuestion.answer;
+    const isCorrect = selectedAnswer.trim().toLowerCase() === currentQuestion.answer.trim().toLowerCase();
     
     const newUserAnswers = [...currentTest.userAnswers, {
       question: currentQuestion.question,
@@ -274,6 +522,7 @@ useEffect(() => {
   // 테스트 완료 처리
   const finishTest = (answers) => {
     const wrongResults = answers.filter(item => !item.correct);
+    setWasWrongAnswerTest(currentTest?.isWrongAnswerTest || false);
     
     // 통계 업데이트
     setTestStats(prev => ({
@@ -282,28 +531,30 @@ useEffect(() => {
     }));
     
     if (currentTest.isWrongAnswerTest) {
-      // 오답 테스트의 경우, 틀린 것만 다시 오답에 저장
-      if (wrongResults.length === 0) {
-        // 모두 맞으면 오답 목록에서 제거
-        setWrongAnswers(prev => ({
-          ...prev,
-          [selectedSet]: []
-        }));
-      } else {
-        setWrongAnswers(prev => ({
-          ...prev,
-          [selectedSet]: wrongResults
-        }));
-      }
-    } else {
-      // 일반 테스트의 경우, 틀린 답안을 오답에 저장
-      if (wrongResults.length > 0) {
-        setWrongAnswers(prev => ({
-          ...prev,
-          [selectedSet]: wrongResults
-        }));
-      }
-    }
+  if (wrongResults.length === 0) {
+    // ✅ 오답 목록 제거 + 표시 플래그 설정
+    setWrongAnswers(prev => ({
+      ...prev,
+      [selectedSet]: []
+    }));
+    setJustClearedWrongAnswers(true); 
+  } else {
+    setWrongAnswers(prev => ({
+      ...prev,
+      [selectedSet]: wrongResults
+    }));
+    setJustClearedWrongAnswers(false);
+  }
+} else {
+  if (wrongResults.length > 0) {
+    setWrongAnswers(prev => ({
+      ...prev,
+      [selectedSet]: wrongResults
+    }));
+  }
+  setJustClearedWrongAnswers(false);
+}
+
     
     setTestResults(answers);
     setCurrentTest(null);
@@ -311,150 +562,217 @@ useEffect(() => {
   };
 
   // 통계 이미지 가져오기
-  const getStatImage = (count) => {
+ const getStatImage = (count) => {
   const key = `${selectedUser}_test${count}`;
+  console.log('Finding image with key:', key, 'Available keys:', Object.keys(statImages));
   return statImages[key] || null;
 };
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eed7fd' }}>
       {/* 헤더 */}
-      <header className="bg-white shadow-md p-4">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center">
-          <h1 className="text-3xl font-bold text-purple-700 mb-4 sm:mb-0">Joy Study</h1>
+<header className="bg-white shadow-md p-4">
+  <div className="max-w-6xl mx-auto">
+    {/* 타이틀 */}
+    <h1 className="text-3xl font-bold text-purple-700 mb-6 text-center sm:text-left">Joy Study</h1>
 
-<div className="flex gap-2 mb-4">
-  <input
-    type="text"
-    placeholder="새 사용자 이름"
-    id="newUserInput"
-    className="p-2 border rounded"
-  />
-  <input
-    type="text"
-    placeholder="시트 ID"
-    id="newSheetInput"
-    className="p-2 border rounded w-[400px]"
-  />
-<button
-  onClick={() => {
-    const name = document.getElementById('newUserInput').value.trim();
-    const id = document.getElementById('newSheetInput').value.trim();
 
-    if (name && id) {
-      addUser(name, id);
+<div className="mb-4">
+  <strong>📡 현재 모드:</strong>{' '}
+  {isOnline ? '온라인' : '오프라인'} / 데이터 소스: {dataSource === 'auto' ? (isOnline ? '스프레드시트' : '엑셀') : dataSource}
 
-      //입력창 초기화
-      document.getElementById('newUserInput').value = '';
-      document.getElementById('newSheetInput').value = '';
-    }
-  }}
-  className="px-4 py-2 bg-purple-600 text-white rounded"
->
-  사용자 추가
-</button>
-
-</div>
-<div className="flex items-center gap-3 mb-4">
-  <label className="text-purple-700 font-medium">사용자:</label>
-  <select
-    value={selectedUser}
-    onChange={(e) => setSelectedUser(e.target.value)}
-    className="p-2 border border-purple-300 rounded-lg bg-white text-purple-700"
-  >
-    {userList.map(user => (
-      <option key={user} value={user}>{user}</option>
-    ))}
-  </select>
+  <div className="mt-2">
+    <label>데이터 소스 선택: </label>
+    <select
+      value={dataSource}
+      onChange={(e) => setDataSource(e.target.value)}
+      className="ml-2 border rounded px-2 py-1"
+    >
+      <option value="auto">자동 (권장)</option>
+      <option value="sheet">Google 시트</option>
+      <option value="excel">엑셀 업로드</option>
+    </select>
+  </div>
 </div>
 
 
-<div className="flex items-center gap-3 mb-4">
-  <label className="text-purple-700 font-medium">사용자:</label>
-  <select
-  value={selectedUser}
-  onChange={(e) => setSelectedUser(e.target.value)}
-  className="p-2 border border-purple-300 rounded-lg bg-white text-purple-700"
->
-  {userList.map(user => (
-    <option key={user} value={user}>{user}</option>
-  ))}
-</select>
-</div>
-<div className="flex items-center gap-3 mb-4">
-  <label className="text-purple-700 font-medium">시트 이름:</label>
-  <input
-    type="text"
-    value={selectedSheet}
-    onChange={(e) => setSelectedSheet(e.target.value)}
-    placeholder="예: 영단어, 역사, 과학"
-    className="p-2 border border-purple-300 rounded-lg bg-white text-purple-700"
-  />
+
+{/* 사용자 선택 및 시트 설정 */}
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+    {/* 사용자 선택 */}
+    <div className="flex flex-col">
+      <label className="text-purple-700 font-medium mb-2">사용자 선택:</label>
+      <select
+        value={selectedUser}
+        onChange={(e) => setSelectedUser(e.target.value)}
+        className="p-2 border border-purple-300 rounded-lg bg-white text-purple-700"
+      >
+        {userList.map(user => (
+          <option key={user} value={user}>{user}</option>
+        ))}
+      </select>
+    </div>
+
+    {/* 시트 선택 */}
+    <div className="flex flex-col">
+      <label className="text-purple-700 font-medium mb-2">시트 이름:</label>
+      <select
+        value={selectedSheet}
+        onChange={(e) => setSelectedSheet(e.target.value)}
+        className="p-2 border border-purple-300 rounded-lg bg-white text-purple-700"
+      >
+        {sheetList.map((name) => (
+          <option key={name} value={name}>{name}</option>
+        ))}
+      </select>
+    </div>
+  </div>
+
+
+
+    {/* 음성 속도 조절 */}
+<div className="mb-4 p-4 bg-gray-50 rounded-lg">
+  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+    <label className="text-purple-700 font-medium whitespace-nowrap">음성 속도:</label>
+    <div className="flex items-center gap-4 w-full sm:w-auto">
+      <input
+        type="range"
+        min="0.3"
+        max="1"
+        step="0.2"
+        value={speechRate}
+        onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+        className="flex-1 sm:w-32"
+      />
+      <span className="text-purple-700 font-medium min-w-[60px]">
+        {speechRate === 1 ? '정상' : 
+         speechRate === 0.7 ? '조금 느림' : 
+         speechRate === 0.5 ? '느림' : 
+         speechRate === 0.3 ? '매우 느림' : `${speechRate}x`}
+      </span>
+    </div>
+  </div>
 </div>
           
-          {/* 네비게이션 */}
-<nav className="flex flex-wrap gap-2">
-            <StyledButton 
-              onClick={() => setActiveTab('upload')}
-              className={activeTab === 'upload' ? 'bg-purple-100' : ''}
-            >
-              <Upload className="w-4 h-4 mr-2 inline" />
-              파일 업로드
-            </StyledButton>
-            
-            <StyledButton 
-              onClick={() => setActiveTab('data')}
-              className={activeTab === 'data' ? 'bg-purple-100' : ''}
-              disabled={!selectedSet}
-            >
-              <BookOpen className="w-4 h-4 mr-2 inline" />
-              학습데이터
-            </StyledButton>
-            
-            <StyledButton 
-              onClick={() => setActiveTab('test')}
-              className={activeTab === 'test' ? 'bg-purple-100' : ''}
-              disabled={!selectedSet}
-            >
-              <FileText className="w-4 h-4 mr-2 inline" />
-              테스트
-            </StyledButton>
-            
-            <StyledButton 
-              onClick={() => setActiveTab('stats')}
-              className={activeTab === 'stats' ? 'bg-purple-100' : ''}
-              disabled={!selectedSet}
-            >
-              <BarChart3 className="w-4 h-4 mr-2 inline" />
-              통계
-            </StyledButton>
-            
-            <StyledButton 
-              onClick={() => setActiveTab('review')}
-              className={activeTab === 'review' ? 'bg-purple-100' : ''}
-              disabled={!selectedSet || !wrongAnswers[selectedSet]?.length}
-            >
-              <RotateCcw className="w-4 h-4 mr-2 inline" />
-              오답복습
-            </StyledButton>
-          </nav>
-        </div>
+          {/* 네비게이션 메뉴 */}
+  <nav className="mb-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <StyledButton 
+          onClick={() => setActiveTab('upload')}
+          className={`text-sm ${activeTab === 'upload' ? 'bg-purple-100' : ''}`}
+        >
+          <Upload className="w-4 h-4 mr-1 inline" />
+          <span className="hidden sm:inline">파일 업로드</span>
+          <span className="sm:hidden">업로드</span>
+        </StyledButton>
+        
+        <StyledButton 
+          onClick={() => setActiveTab('data')}
+          className={`text-sm ${activeTab === 'data' ? 'bg-purple-100' : ''}`}
+          disabled={!selectedSet}
+        >
+          <BookOpen className="w-4 h-4 mr-1 inline" />
+          <span className="hidden sm:inline">학습데이터</span>
+          <span className="sm:hidden">학습</span>
+        </StyledButton>
+        
+        <StyledButton 
+          onClick={() => setActiveTab('test')}
+          className={`text-sm ${activeTab === 'test' ? 'bg-purple-100' : ''}`}
+          disabled={!selectedSet}
+        >
+          <FileText className="w-4 h-4 mr-1 inline" />
+          테스트
+        </StyledButton>
+        
+       <StyledButton
+          onClick={() => {
+            if (!selectedUser || !selectedSet) {
+            alert('사용자와 세트를 모두 선택하세요.');
+            return;
+           }
+
+    const setData = getSetData(selectedSet);
+    if (setData.length === 0) {
+      alert('선택한 세트에 단어가 없습니다.');
+      return;
+    }
+
+   const wordData = getSetData(selectedSet);
+if (wordData.length === 0) {
+  alert('선택한 세트에 단어가 없습니다.');
+  return;
+}
+const gameData = {
+  currentSet: selectedSet,
+  wordData,
+  selectedUser,
+};
+console.log("게임 데이터 저장됨:", gameData);
+localStorage.setItem("gameData", JSON.stringify(gameData));
+window.location.href = "/game/game.html";
+
+
+  }}
+  className="ml-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
+>
+  🎮 게임 시작
+</StyledButton>
+
+        <StyledButton 
+          onClick={() => setActiveTab('stats')}
+          className={`text-sm ${activeTab === 'stats' ? 'bg-purple-100' : ''}`}
+          disabled={!selectedSet}
+        >
+          <BarChart3 className="w-4 h-4 mr-1 inline" />
+          통계
+        </StyledButton>
+        
+        <StyledButton 
+          onClick={() => setActiveTab('review')}
+          className={`text-sm ${activeTab === 'review' ? 'bg-purple-100' : ''}`}
+          disabled={!selectedSet || !wrongAnswers[selectedSet]?.length}
+        >
+          <RotateCcw className="w-4 h-4 mr-1 inline" />
+          <span className="hidden sm:inline">오답복습</span>
+          <span className="sm:hidden">복습</span>
+        </StyledButton>
+      </div>
+    </nav>
         
         {/* 세트 selector */}
-        {studyData.length > 0 && (
-          <div className="max-w-6xl mx-auto mt-4">
-            <select 
-              value={selectedSet}
-              onChange={(e) => setSelectedSet(e.target.value)}
-              className="p-2 border border-purple-300 rounded-lg bg-white text-purple-700"
-            >
-              {getSets().map(set => (
-                <option key={set} value={set}>{set}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </header>
+   
+  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+    <label className="text-purple-700 font-medium whitespace-nowrap">세트 선택:</label>
+    <select 
+      value={selectedSet}
+      onChange={(e) => setSelectedSet(e.target.value)}
+      className="w-full sm:w-auto p-2 border border-purple-300 rounded-lg bg-white text-purple-700"
+    >
+      {getSets().map(set => (
+        <option key={set} value={set}>{set}</option>
+      ))}
+    </select>
+    {isLoading && (
+      <span className="text-sm text-gray-500">데이터 로딩 중...</span>
+    )}
+  </div>
+
+
+
+{/* 데이터가 없을 때 표시할 메시지 */}
+{!isLoading && studyData.length === 0 && selectedUser && selectedSheet && (
+  <div className="text-center py-4">
+    <p className="text-gray-500">
+      '{selectedUser}'의 '{selectedSheet}' 시트에서 데이터를 불러올 수 없습니다.
+    </p>
+    <p className="text-sm text-gray-400 mt-1">
+      시트 공유 설정이나 시트 이름을 확인해주세요.
+    </p>
+  </div>
+)}
+  </div>
+</header>
 
       {/* 메인 콘텐츠 */}
       <main className="max-w-6xl mx-auto p-4">
@@ -505,7 +823,6 @@ useEffect(() => {
                     <th className="border border-gray-300 p-2">번호</th>
                     <th className="border border-gray-300 p-2">문제</th>
                     <th className="border border-gray-300 p-2">답</th>
-                    <th className="border border-gray-300 p-2">발음</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -515,21 +832,14 @@ useEffect(() => {
                       <td className="border border-gray-300 p-2">
                         {item.question}
                         <button
-                          onClick={() => speakText(item.question)}
+                          onClick={() => speakText(item.question, item.answer)}
                           className="ml-2 text-purple-600 hover:text-purple-800"
                         >
                           <Volume2 className="w-3 h-3" />
                         </button>
                       </td>
                       <td className="border border-gray-300 p-2">{item.answer}</td>
-                      <td className="border border-gray-300 p-2 text-center">
-                        <button
-                          onClick={() => speakText(item.answer)}
-                          className="text-purple-600 hover:text-purple-800"
-                        >
-                          <Volume2 className="w-4 h-4" />
-                        </button>
-                      </td>
+                    
                     </tr>
                   ))}
                 </tbody>
@@ -544,9 +854,14 @@ useEffect(() => {
             {!currentTest && !showResults && (
               <div>
                 <h2 className="text-2xl font-bold text-purple-700 mb-4">테스트 - {selectedSet}</h2>
-                <StyledButton onClick={() => startTest()}>
-                  테스트 시작
-                </StyledButton>
+                <StyledButton onClick={() => startTest(false, false)}>
+  객관식 테스트 시작
+</StyledButton>
+
+<StyledButton onClick={() => startTest(false, true)} className="ml-2">
+  주관식 테스트 시작
+</StyledButton>
+
               </div>
             )}
             
@@ -567,21 +882,43 @@ useEffect(() => {
                 </div>
                 
                 <div className="mb-6">
-                  <h4 className="text-lg font-medium mb-4">
-                    {currentTest.questions[currentTest.currentIndex].question}
-                  </h4>
+                  <h4 className="text-lg font-medium mb-4" dangerouslySetInnerHTML={{
+  __html: currentTest.questions[currentTest.currentIndex].question.replace(/\n/g, '<br/>')
+}} />
+
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {currentTest.questions[currentTest.currentIndex].choices.map((choice, index) => (
-                      <StyledButton
-                        key={index}
-                        onClick={() => submitAnswer(choice)}
-                        className="text-left p-4 hover:bg-purple-50"
-                      >
-                        {choice}
-                      </StyledButton>
-                    ))}
-                  </div>
+                  {isSubjectiveTest ? (
+  <div className="mb-4">
+    <input
+      type="text"
+      value={subjectiveAnswer}
+      onChange={(e) => setSubjectiveAnswer(e.target.value)}
+      placeholder="정답을 입력하세요"
+      className="w-full p-3 border border-purple-300 rounded"
+    />
+    <StyledButton
+      onClick={() => {
+        submitAnswer(subjectiveAnswer.trim());
+        setSubjectiveAnswer('');
+      }}
+      className="mt-2"
+    >
+      제출
+    </StyledButton>
+  </div>
+) : (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    {currentTest.questions[currentTest.currentIndex].choices.map((choice, index) => (
+      <StyledButton
+        key={index}
+        onClick={() => submitAnswer(choice)}
+        className="text-left p-4 hover:bg-purple-50"
+      >
+        {choice}
+      </StyledButton>
+    ))}
+  </div>
+)}
                 </div>
               </div>
             )}
@@ -660,7 +997,7 @@ useEffect(() => {
         )}
 
         {/* 오답복습 탭 */}
-        {activeTab === 'review' && selectedSet && wrongAnswers[selectedSet]?.length > 0 && (
+        {activeTab === 'review' && selectedSet && (
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-2xl font-bold text-purple-700 mb-4">오답 복습 - {selectedSet}</h2>
             
@@ -732,11 +1069,11 @@ useEffect(() => {
                       ({Math.round(testResults.filter(r => r.correct).length / testResults.length * 100)}%)
                     </span>
                   </p>
-                  {testResults.filter(r => r.correct).length === testResults.length && (
-                    <p className="text-green-600 font-semibold mt-2">
-                      🎉 모든 문제를 맞혔습니다! 오답 목록에서 제거됩니다.
-                    </p>
-                  )}
+                  {activeTab === 'review' && showResults && wasWrongAnswerTest && justClearedWrongAnswers && (
+  <p className="text-green-600 font-semibold mt-2">
+    🎉 모든 문제를 맞혔습니다! 오답 목록에서 제거됩니다.
+  </p>
+)}
                 </div>
                 
                 <div className="space-y-3">
@@ -769,5 +1106,4 @@ useEffect(() => {
     </div>
   );
 };
-
 export default JoyStudyApp;
