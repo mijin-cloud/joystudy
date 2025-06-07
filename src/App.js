@@ -130,13 +130,6 @@ useEffect(() => {
   }
 }, [userList, selectedUser, loadStatImages]); 
 
-  
-  // 통계 이미지 로딩 추가 👈 이 부분을 추가
-  if (userList.length > 0) {
-    loadStatImages();
-  }
-}, [userList, selectedUser]);
-
 // 시트 목록 자동 로딩
 useEffect(() => {
   const sheetID = users[selectedUser];
