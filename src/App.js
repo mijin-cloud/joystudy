@@ -6,7 +6,7 @@ import { initializeApp } from 'firebase/app';
 import firebaseConfig from './firebaseConfig'; 
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// Firebase 초기화
+
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
@@ -55,7 +55,7 @@ const saveSpreadsheetDataToFirestore = async (data, user, sheetName) => {
 
 const JoyStudyApp = () => {
   const [studyData, setStudyData] = useState([]);
-  const [sheetList, setSheetList] = useState([]); // 자동으로 불러온 시트 이름 목록
+  const [sheetList, setSheetList] = useState([]); 
 const initialUsers = {
   hoo: '10OqBEmzpjamtSBEiBxfua04Z103l0AFrm4zBE1BJ-tA',
   un: '1PCexbIAT1kBQiGlNIN0zzGDwUTVkZrO-7LutKuNhET4',
@@ -64,9 +64,8 @@ const initialUsers = {
 
 const [users] = useState(initialUsers);
 const [userList] = useState(Object.keys(initialUsers));
-const [selectedUser, setSelectedUser] = useState(Object.keys(initialUsers)[0] || ''); // 첫 번째 사용자를 기본값으로
+const [selectedUser, setSelectedUser] = useState(Object.keys(initialUsers)[0] || ''); 
 const [selectedSheet, setSelectedSheet] = useState('영단어'); // 기본 탭 이름
-  const [selectedSet, setSelectedSet] = useState('');
   const [activeTab, setActiveTab] = useState('upload');
   const [testStats, setTestStats] = useState({});
   const [wrongAnswers, setWrongAnswers] = useState({});
@@ -88,7 +87,7 @@ const imageInputRef = useRef(null);
  const loadStatImages = useCallback(async () => {
   try {
     const imageKeys = [];
-    // 모든 사용자와 테스트 횟수 조합 생성
+    
     for (const user of userList) {
       for (let i = 1; i <= 5; i++) {
         imageKeys.push(`${user}_test${i}`);
@@ -114,7 +113,6 @@ const imageInputRef = useRef(null);
   }
 }; [userList]);
 
-// 초기 사용자 자동 설정
 useEffect(() => {
   if (!selectedUser && userList.length > 0) {
     const savedUser = localStorage.getItem('lastUser');
@@ -183,7 +181,7 @@ useEffect(() => {
 useEffect(() => {
   const handleMessage = (event) => {
     if (event.data.type === 'BACK_TO_STUDY') {
-      setActiveTab('test'); // 또는 원하는 탭으로 이동
+      setActiveTab('test'); 
     }
   };
   
@@ -255,7 +253,6 @@ useEffect(() => {
 
         setStudyData(processedData);
 
-       // Firestore에도 저장
 if (processedData.length > 0) {
   saveSpreadsheetDataToFirestore(processedData, selectedUser, selectedSheet);
 }
@@ -353,8 +350,6 @@ for (const setName in groupedBySet) {
 
   reader.readAsArrayBuffer(file);
 };
-
-  
 
   // 이미지 업로드 처리
 const handleImageUpload = async (event) => {
@@ -460,14 +455,11 @@ const speakText = (text, answer = null) => {
   }
 
   setCurrentTest({ questions, isWrongAnswerTest, currentIndex: 0, userAnswers: [] });
-  setIsSubjectiveTest(isSubjective);   // 추가
-  setSubjectiveAnswer('');             // 추가
+  setIsSubjectiveTest(isSubjective);   
+  setSubjectiveAnswer('');             
   setShowResults(false);
 };
 
-
-
-  // 선택지 생성
   const generateChoices = (correctItem, allData) => {
     const choices = [correctItem.answer];
     const otherAnswers = allData
