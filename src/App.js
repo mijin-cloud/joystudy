@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, BookOpen, FileText, BarChart3, RotateCcw, Volume2, Check, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getFirestore, doc, setDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import { initializeApp } from 'firebase/app';
 import firebaseConfig from './firebaseConfig'; 
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -146,7 +146,7 @@ useEffect(() => {
   const sheetID = users[selectedUser];
   if (!sheetID) return;
 
-  const API_KEY = 'AIzaSyDcasa5mBSxpxz7evW8VwJLhnVoLhZ1gCo';  
+  const API_KEY = process.env.REACT_APP_GOOGLE_API_KEY;  // ✅ .env에서 불러오기
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetID}?fields=sheets.properties.title&key=${API_KEY}`;
 
   fetch(url)

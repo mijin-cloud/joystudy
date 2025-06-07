@@ -1,5 +1,5 @@
 const firebaseConfig = {
-  apiKey: "AIzaSyCihtvH8wSMTafaohv0gd4DgEtDDl44jxE",
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: "joystudy-effc5.firebaseapp.com",
   databaseURL: "https://joystudy-effc5-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "joystudy-effc5",
