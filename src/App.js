@@ -62,7 +62,6 @@ const initialUsers = {
   지민: '1bS1VXxtA7rv-zQAixdiDK47iSHQei1zIe42-kG1PdUw'
 };
 
-const MAX_INIT_ATTEMPTS = 3;
 const [users, setUsers] = useState(initialUsers);
 const [userList, setUserList] = useState(Object.keys(initialUsers));
 const [selectedUser, setSelectedUser] = useState(Object.keys(initialUsers)[0] || ''); // 첫 번째 사용자를 기본값으로
@@ -77,23 +76,14 @@ const [selectedSheet, setSelectedSheet] = useState('영단어'); // 기본 탭 �
   const [testResults, setTestResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [statImages, setStatImages] = useState({});
-   const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
  const [speechRate, setSpeechRate] = useState(0.9); // 기본 속도 0.9  
-
- const [isSubjectiveTest, setIsSubjectiveTest] = useState(false);
+const [isSubjectiveTest, setIsSubjectiveTest] = useState(false);
 const [subjectiveAnswer, setSubjectiveAnswer] = useState('');
 const [isOnline, setIsOnline] = useState(navigator.onLine);
 const [dataSource, setDataSource] = useState('auto'); // 'auto' | 'sheet' | 'excel'
-
-
-const addUser = (newUser, sheetID) => {
-  setUsers(prev => ({ ...prev, [newUser]: sheetID }));
-  setUserList(prev => prev.includes(newUser) ? prev : [...prev, newUser]);
-};
-
 const fileInputRef = useRef(null);
-
-  const imageInputRef = useRef(null);
+const imageInputRef = useRef(null);
 
  const loadStatImages = async () => {
   try {
@@ -131,9 +121,15 @@ useEffect(() => {
     if (savedUser && userList.includes(savedUser)) {
       setSelectedUser(savedUser);
     } else {
-      setSelectedUser(userList[0]); // 첫 번째 사용자를 기본값으로
+      setSelectedUser(userList[0]);
     }
   }
+
+  if (userList.length > 0) {
+    loadStatImages();
+  }
+}, [userList, selectedUser, loadStatImages]); 
+
   
   // 통계 이미지 로딩 추가 👈 이 부분을 추가
   if (userList.length > 0) {
@@ -211,6 +207,8 @@ useEffect(() => {
 
   setIsLoading(true);
   console.log(`${selectedUser}의 시트 '${selectedSheet}' 로딩 시작...`);
+
+  
 
   const encodedSheetName = encodeURIComponent(selectedSheet);
   const url = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:json&sheet=${encodedSheetName}&headers=1`;
