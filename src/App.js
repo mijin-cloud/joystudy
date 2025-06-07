@@ -66,6 +66,7 @@ const [users] = useState(initialUsers);
 const [userList] = useState(Object.keys(initialUsers));
 const [selectedUser, setSelectedUser] = useState(Object.keys(initialUsers)[0] || ''); 
 const [selectedSheet, setSelectedSheet] = useState('영단어'); // 기본 탭 이름
+const [selectedSet, setSelectedSet] = useState('');
   const [activeTab, setActiveTab] = useState('upload');
   const [testStats, setTestStats] = useState({});
   const [wrongAnswers, setWrongAnswers] = useState({});
@@ -111,7 +112,7 @@ const imageInputRef = useRef(null);
   } catch (error) {
     console.error('통계 이미지 로딩 오류:', error);
   }
-}; [userList]);
+}, [userList]);
 
 useEffect(() => {
   if (!selectedUser && userList.length > 0) {
@@ -152,7 +153,7 @@ useEffect(() => {
       console.error('시트 목록 오류:', err);
       setSheetList([]);
     });
-}, [selectedUser]);
+}, [selectedUser, users]);
 
 // 사용자별 기록 불러오기
 useEffect(() => {
