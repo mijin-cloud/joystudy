@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { Upload, BookOpen, FileText, BarChart3, RotateCcw, Volume2, Check, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -62,8 +62,8 @@ const initialUsers = {
   지민: '1bS1VXxtA7rv-zQAixdiDK47iSHQei1zIe42-kG1PdUw'
 };
 
-const [users, setUsers] = useState(initialUsers);
-const [userList, setUserList] = useState(Object.keys(initialUsers));
+const [users] = useState(initialUsers);
+const [userList] = useState(Object.keys(initialUsers));
 const [selectedUser, setSelectedUser] = useState(Object.keys(initialUsers)[0] || ''); // 첫 번째 사용자를 기본값으로
 const [selectedSheet, setSelectedSheet] = useState('영단어'); // 기본 탭 이름
   const [selectedSet, setSelectedSet] = useState('');
@@ -85,7 +85,7 @@ const [dataSource, setDataSource] = useState('auto'); // 'auto' | 'sheet' | 'exc
 const fileInputRef = useRef(null);
 const imageInputRef = useRef(null);
 
- const loadStatImages = async () => {
+ const loadStatImages = useCallback(async () => {
   try {
     const imageKeys = [];
     // 모든 사용자와 테스트 횟수 조합 생성
@@ -112,7 +112,7 @@ const imageInputRef = useRef(null);
   } catch (error) {
     console.error('통계 이미지 로딩 오류:', error);
   }
-}; 
+}; [userList]);
 
 // 초기 사용자 자동 설정
 useEffect(() => {
